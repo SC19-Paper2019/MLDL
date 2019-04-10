@@ -1,0 +1,42 @@
+FROM olcf/summit:centos-7_2018-04-26
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/anaconda3/lib:${LD_LIBRARY_PATH}
+ENV PATH=/usr/local/cuda/bin:/usr/local/bin:/usr/local/anaconda3/bin:${PATH}
+
+RUN yum -y update && \
+    yum -y install epel-release && \
+    yum -y update && \
+    yum -y install bzip2 && \
+    yum -y clean all && \
+    rm -rf /var/cache/yum
+
+RUN cd /usr/local  && \
+    wget https://repo.anaconda.com/archive/Anaconda3-5.2.0-Linux-ppc64le.sh -O anaconda3.sh  && \
+    bash ./anaconda3.sh -b -p /usr/local/anaconda3  && \
+    ./anaconda3/bin/pip install --upgrade pip  && \
+    ./anaconda3/bin/pip install --upgrade numpy  && \
+    rm -rf anaconda3.sh  && \
+    wget https://users.nccs.gov/~mikem/cuda-9.2.tgz   && \
+    tar xvzf cuda-9.2.tgz  && \
+    rm -rf cuda cuda-9.1  && \
+    ln -s cuda-9.2 cuda
+
+RUN cd /usr/local  && \
+    wget --no-check-certificate https://acme-webserver.ornl.gov/jqyin/tensorflow-1.9.0-cp36-cp36m-linux_ppc64le.whl  && \
+    ./anaconda3/bin/pip install tensorflow-1.9.0-cp36-cp36m-linux_ppc64le.whl  && \
+    rm -rf tensorflow-1.9.0-cp36-cp36m-linux_ppc64le.whl
+
+RUN cd /usr/local  && \
+    wget --no-check-certificate https://acme-webserver.ornl.gov/jqyin/torch-0.5.0a0+a24163a-cp36-cp36m-linux_ppc64le.whl  && \
+    ./anaconda3/bin/pip install torch-0.5.0a0+a24163a-cp36-cp36m-linux_ppc64le.whl  && \
+    ./anaconda3/bin/pip install torchvision tensorboardX tqdm  && \
+    rm -rf torch-0.5.0a0+a24163a-cp36-cp36m-linux_ppc64le.whl
+
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
+    ldconfig /usr/local/cuda/lib64/stubs && \
+    ldconfig /usr/local/cuda/extras/CUPTI/lib64 && \
+    ldconfig
+
+RUN /usr/local/anaconda3/bin/pip install keras && LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH HOROVOD_WITH_PYTORCH=1 HOROVOD_GPU_ALLREDUCE=NCCL HOROVOD_NCCL_HOME=/usr/local/cuda/lib64 /usr/local/anaconda3/bin/pip install horovod && \
+    ldconfig
+    

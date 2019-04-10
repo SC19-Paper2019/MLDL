@@ -1,0 +1,46 @@
+#!/bin/bash
+# Begin LSF directives
+#BSUB -P stf011
+#BSUB -J loadtime
+#BSUB -o tst.o%J
+#BSUB -W 00:10
+#BSUB -nnodes 1
+#BSUB -alloc_flags nvme
+# End LSF directives and begin shell commands
+
+INSTALL_DIR=/gpfs/alpine/stf011/world-shared/junqi/native-build
+TAR=/gpfs/alpine/stf011/scratch/junqi/native-build.tar
+module load cuda/9.2.148
+nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch | wc -l)
+
+echo "bench startup time on gpfs"
+PREFIX=$INSTALL_DIR
+export LD_LIBRARY_PATH=$PREFIX/nccl/lib:$INSTALL_DIR/cudnn/lib:$LD_LIBRARY_PATH
+export PATH=$PREFIX/anaconda3/bin:$PATH
+#jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed strace -c -e open,stat  python -c "import tensorflow as tf; print(tf.__version__)" 2>&1 > time.gpfs
+#jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed time python -c "import tensorflow as tf"
+time jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed python -c "import tensorflow as tf"
+
+echo "bench startup time with container"
+IMG=/gpfs/alpine/stf007/world-shared/powerAI/powerai-1.5.3-all-ubuntu16.04-py3.simg
+export SINGULARITYENV_PREPEND_PATH=/opt/anaconda2/bin:/opt/anaconda3/bin
+cat << EOF > run.sh
+. /opt/DL/tensorflow/bin/tensorflow-activate
+python -c "import tensorflow as tf"
+EOF
+#jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed strace -c -e open,stat singularity exec $IMG bash run.sh 2>&1 > time.container
+jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed #time singularity exec --nv $IMG bash run.sh 
+time jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed singularity exec --nv $IMG bash run.sh 
+
+echo "bench startup time on nvme"
+PREFIX=/mnt/bb/$USER/native-build
+export LD_LIBRARY_PATH=$PREFIX/nccl/lib:$INSTALL_DIR/cudnn/lib:$LD_LIBRARY_PATH
+export PATH=$PREFIX/anaconda3/bin:$PATH
+time jsrun -n $nnodes -a 1 -c 1 -r1 tar -xf $TAR -C /mnt/bb/$USER
+#jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed strace -c -e open,stat  python -c "import tensorflow as tf; print(tf.__version__)" 2>&1 > time.nvme
+#jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed time python -c "import tensorflow as tf"
+time jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed python -c "import tensorflow as tf"
+
+
+
+

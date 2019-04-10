@@ -1,0 +1,36 @@
+#!/bin/bash
+# Begin LSF directives
+#BSUB -P <PROJECT>
+#BSUB -J test
+#BSUB -o tst.o%J
+#BSUB -W 01:00
+#BSUB -nnodes 4
+#BSUB -alloc_flags nvme
+# End LSF directives and begin shell commands
+
+export MODE="powerai" #powerai or native 
+export FWK="keras" #keras, pytorch, or tensorflow
+
+nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch | wc -l)
+
+#copy imagenet data to SSD 
+if [ "$FWK" = "tensorflow" ]; then 
+  jsrun -n $nnodes -a 1 -c 1 -r1 cp /gpfs/wolf/stf011/world-shared/imagenet/tfrecord/train -r /mnt/bb/$USER
+  export DATADIR=/mnt/bb/$USER/train 
+else # keras or pytorch 
+  jsrun -n $nnodes -a 1 -c 1 -r1 tar -xf /gpfs/wolf/stf011/world-shared/imagenet/jpeg.tar -C /mnt/bb/$USER
+  export DATADIR=/mnt/bb/$USER/data
+fi
+
+if [ "$MODE" = "powerai" ]; then
+  IMG="/gpfs/wolf/stf011/world-shared/powerai/powerai-1.5.3.1-all-ubuntu16.04-py2.simg"
+  export PYTHONPATH=$(pwd)/../external/lib/python2.7/site-packages:$PYTHONPATH
+  . ../utils/setup_powerai_env.sh 
+  jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 singularity exec -B /gpfs/wolf -B /opt/ibm -B /autofs/nccsopen-svm1_sw -B /mnt/bb/yzn  --nv ${IMG} ../utils/launch.sh "../utils/run.sh"
+else # native 
+  export CONDA_DIR=/gpfs/wolf/stf011/world-shared/native-build
+  . ../utils/setup_native_env.sh 
+  jsrun -n${nnodes} -a6 -c42 -g6 -r1 --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ../utils/launch.sh "../utils/run.sh"
+fi
+
+

@@ -1,0 +1,23 @@
+#!/bin/bash -l
+#BSUB -P STF011
+#BSUB -J tune
+#BSUB -o logs.o%J
+#BSUB -W 02:00
+#BSUB -nnodes 64
+#BSUB -alloc_flags "smt1 nvme"
+##BSUB -alloc_flags "smt4 nvme maximizegpfs"
+#BSUB -q batch
+
+OUTPUT=$(pwd)/ray_results 
+rm -rf tmp 
+#export RAY_DEBUG=1
+
+. env.sh 
+. start-ray-cluster.sh
+
+NODES=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch | wc -l)
+jsrun -n$NODES -a1 -c1 -r1 tar -xf $PREFIX/data/cifar-10-python.tar.gz -C /mnt/bb/$USER/ 
+
+ssh $RAY_MASTER LD_LIBRARY_PATH=$LD_LIBRARY_PATH PATH=$PATH python $(pwd)/pbt_tune_cifar10_resnet_with_keras.py --redis-address $RAY_MASTER:6379 --output-dir $OUTPUT 
+
+./stop-ray-cluster.sh 

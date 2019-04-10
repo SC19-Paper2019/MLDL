@@ -1,0 +1,32 @@
+54a55,83
+> import time
+> import numpy as np
+> from keras.callbacks import Callback
+> class ImagesPerSec(Callback):
+>     def __init__(self, batch_size):
+>         self.batch_size = batch_size
+> 
+>     def on_train_begin(self, logs={}):
+>         self.all_images_per_sec = []
+> 
+>     def on_batch_begin(self, batch, logs={}):
+>         self.start_time = time.time()
+> 
+>     def on_batch_end(self, batch, logs={}):
+>         end_time = time.time()
+>         elapsed_time = end_time - self.start_time
+>         images_per_sec = self.batch_size / elapsed_time
+>         self.all_images_per_sec.append(images_per_sec)
+> 
+>     def on_epoch_end(self, epoch, logs={}):
+>         self.print_results()
+> 
+>     def on_train_end(self, logs={}):
+>         self.print_results()
+> 
+>     def print_results(self):
+>         print('Images/sec: %0.1f' % np.mean(self.all_images_per_sec))
+> 
+> 
+159a189
+>     callbacks.append(ImagesPerSec(args.batch_size*hvd.size()))   

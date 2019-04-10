@@ -1,0 +1,93 @@
+--- pytorch_imagenet_resnet50.py	2018-11-09 12:17:25.715057329 -0500
++++ pytorch_imagenet_resnet50.py.bench	2018-11-09 12:18:00.283225442 -0500
+@@ -10,6 +10,8 @@
+ import tensorboardX
+ import os
+ from tqdm import tqdm
++import time
++import numpy as np
+ 
+ # Training settings
+ parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
+@@ -78,7 +80,7 @@
+ log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
+ 
+ 
+-kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
++kwargs = {'num_workers': 0, 'pin_memory': True} if args.cuda else {}
+ train_dataset = \
+     datasets.ImageFolder(args.train_dir,
+                          transform=transforms.Compose([
+@@ -146,11 +148,13 @@
+     train_sampler.set_epoch(epoch)
+     train_loss = Metric('train_loss')
+     train_accuracy = Metric('train_accuracy')
++    train_perf = []
+ 
+     with tqdm(total=len(train_loader),
+               desc='Train Epoch     #{}'.format(epoch + 1),
+               disable=not verbose) as t:
+         for batch_idx, (data, target) in enumerate(train_loader):
++            start_time = time.time()
+             adjust_learning_rate(epoch, batch_idx)
+ 
+             if args.cuda:
+@@ -166,22 +170,29 @@
+             t.set_postfix({'loss': train_loss.avg.item(),
+                            'accuracy': 100. * train_accuracy.avg.item()})
+             t.update(1)
++            end_time = time.time()
++            elapsed_time = end_time - start_time
++            samples_per_sec = args.batch_size / elapsed_time
++            train_perf.append(samples_per_sec)
+ 
+     if log_writer:
+         log_writer.add_scalar('train/loss', train_loss.avg, epoch)
+         log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
++    return train_perf
+ 
+ 
+ def validate(epoch):
+     model.eval()
+     val_loss = Metric('val_loss')
+     val_accuracy = Metric('val_accuracy')
++    val_perf = []
+ 
+     with tqdm(total=len(val_loader),
+               desc='Validate Epoch  #{}'.format(epoch + 1),
+               disable=not verbose) as t:
+         with torch.no_grad():
+             for data, target in val_loader:
++                start_time = time.time()
+                 if args.cuda:
+                     data, target = data.cuda(), target.cuda()
+                 output = model(data)
+@@ -191,10 +202,15 @@
+                 t.set_postfix({'loss': val_loss.avg.item(),
+                                'accuracy': 100. * val_accuracy.avg.item()})
+                 t.update(1)
++                end_time = time.time()
++                elapsed_time = end_time - start_time
++                samples_per_sec = args.batch_size / elapsed_time
++                val_perf.append(samples_per_sec)
+ 
+     if log_writer:
+         log_writer.add_scalar('val/loss', val_loss.avg, epoch)
+         log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
++    return val_perf
+ 
+ 
+ # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
+@@ -250,6 +266,10 @@
+ 
+ 
+ for epoch in range(resume_from_epoch, args.epochs):
+-    train(epoch)
+-    validate(epoch)
++    train_perf = train(epoch)
++    if hvd.rank() == 0:
++        print("Train Images/sec: %0.2f" % (np.mean(train_perf)*hvd.size())) 
++    val_perf = validate(epoch)
++    if hvd.rank() == 0:
++        print("Val Images/sec: %0.2f" % (np.mean(val_perf)*hvd.size())) 
+     save_checkpoint(epoch)
